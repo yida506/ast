@@ -131,7 +131,13 @@ const ConditionNormal = {
         let {test, consequent, alternate} = path.node;
         if(!types.isUnaryExpression(test)) return;
         // console.log(path.toString());
-        path.replaceWith(consequent);
+        path.insertBefore(
+            types.ifStatement(test,
+                types.blockStatement([types.ExpressionStatement(consequent)]),
+                null)
+        )
+        path.remove()
+
     }
 };
 traverse(ast_code, ConditionNormal);
@@ -192,21 +198,21 @@ const SwitchReplace =  {
                 let control_value = reference.parent.arguments[0].value;
                 let switchfix = new nodeMerge.SwitchNodeMerge(arrexpression.init ,switch_body, switch_test_name)
                 let control_body = switchfix.Merge(control_value, []);
-                out_cases.push(types.switchCase(
-                        types.NumericLiteral(control_value),
-                        control_body
-                    )
-                );
+                let now_switch_case = types.switchCase(
+                    types.NumericLiteral(control_value),
+                    control_body
+                )
+                out_cases.push(now_switch_case);
             }
             else if(types.isMemberExpression(reference.parent)){
                 let control_value = 0;
                 let switchfix = new nodeMerge.SwitchNodeMerge(arrexpression.init ,switch_body, switch_test_name)
                 let control_body = switchfix.Merge(control_value, []);
-                out_cases.push(types.switchCase(
-                        types.NumericLiteral(control_value),
-                        control_body
-                    )
-                );
+                let now_switch_case = types.switchCase(
+                    types.NumericLiteral(control_value),
+                    control_body
+                )
+                out_cases.push(now_switch_case);
             };
         };
         let while_index = get_while_index(body.body);

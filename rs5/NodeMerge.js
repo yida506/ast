@@ -47,7 +47,7 @@ class SwitchNodeMerge {
     Merge(nodevalue, arr){
         // console.log('当前节点的索引是'+nodevalue);
         // console.log('当前节点的值为'+this.arr_statement.elements[nodevalue].value);
-        // console.log('当前节点的Body为'+generator(this.get_switch_case(this.switch_statement.cases, this.arr_statement.elements[nodevalue].value)).code);
+        console.log('当前节点的Body为'+generator(this.get_switch_case(this.switch_statement.cases, this.arr_statement.elements[nodevalue].value)).code);
         let current_index = nodevalue;
         let current_switch_value = this.arr_statement.elements[nodevalue].value;
         let body_statements = this.get_switch_case(this.switch_statement.cases, current_switch_value);
