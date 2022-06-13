@@ -4,9 +4,9 @@ const {parse} = require("@babel/parser");
 generator = require("@babel/generator").default;
 const traverse = require("@babel/traverse").default;
 const types = require("@babel/types");
-let encode_file = 'html_test.js',decode_file = 'node_decode.js';
-let js_code = fs.readFileSync(encode_file, {encoding: "utf-8"});
-ast_code = parse(js_code);
+// let encode_file = 'html_test.js',decode_file = 'node_decode.js';
+// let js_code = fs.readFileSync(encode_file, {encoding: "utf-8"});
+// ast_code = parse(js_code);
 
 
 
@@ -43,21 +43,25 @@ class SwitchNodeMerge {
         return current_index;
     }
 
-
-    Merge(nodevalue, arr){
-        // console.log('当前节点的索引是'+nodevalue);
+    //last_arr 用于记录
+    Merge(nodevalue, arr, last_arr){
+        console.log('当前节点的索引是'+nodevalue);
         // console.log('当前节点的值为'+this.arr_statement.elements[nodevalue].value);
         // console.log('当前节点的Body为'+generator(this.get_switch_case(this.switch_statement.cases, this.arr_statement.elements[nodevalue].value)).code);
         let current_index = nodevalue;
         let current_switch_value = this.arr_statement.elements[nodevalue].value;
         let body_statements = this.get_switch_case(this.switch_statement.cases, current_switch_value);
+        let the_last_arr = body_statements.consequent[0];
+        console.log('当前body',generator(body_statements.consequent[0]).code)
         for(let body_statement of body_statements.consequent){
             if(types.isIfStatement(body_statement)){
                 if(body_statement.alternate == null){
                     for(let if_body of body_statement.consequent.body){
                         if(types.isAssignmentExpression(if_body.expression) && if_body.expression.left.name === this.switch_test_name){
                             let if_value_index = this.NodeValueCaculator(current_index+1, if_body, this.switch_test_name);
-                            let if_arr = this.Merge(if_value_index, []);
+                            console.log("进入If");
+                            let if_arr = this.Merge(if_value_index, [], the_last_arr);
+                            console.log("if 结束");
                             arr.push(types.ifStatement(body_statement.test, types.blockStatement(if_arr), null ));
                         }
                     };
@@ -107,10 +111,7 @@ const test = {
         // console.log(generator(expression).code);
         let Switch_Repalce = new SwitchNodeMerge(arr_statement, switch_body, switch_test_name);
         let out_arr = Switch_Repalce.Merge(0, []);
-
-
     }
-
 
 
 };
