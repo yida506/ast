@@ -56,6 +56,7 @@ class SwitchNodeMerge {
         for(let body_statement of body_statements.consequent){
             if(types.isIfStatement(body_statement)){
                 if(body_statement.alternate == null){
+                    // to do for 循环判断
                     for(let if_body of body_statement.consequent.body){
                         if(types.isAssignmentExpression(if_body.expression) && if_body.expression.left.name === this.switch_test_name){
                             let if_value_index = this.NodeValueCaculator(current_index+1, if_body, this.switch_test_name);
