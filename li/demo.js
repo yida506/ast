@@ -31,8 +31,6 @@ function get_switch_expression(arr){
     return false
 };
 
-
-
 function get_switch_val(switch_body_arr, swiobj){
     const {discriminant, cases} = swiobj;
     for(let casenode of cases){
@@ -40,9 +38,11 @@ function get_switch_val(switch_body_arr, swiobj){
             get_switch_val(switch_body_arr, casenode.consequent[0])
         }else{
             for(let i of casenode.consequent){
+                // console.log(i.type,'------',generator(i).code);
                 if(types.isAssignmentExpression(i.expression) && i.expression.left.name == 'a'){
                     switch_body_arr.push(i.expression.right.value);
                 }else if(types.isIfStatement(i)){
+                    // console.log(i.type,'------',generator(i).code,'-----',i.alternate.body[0].expression.right.value);
                     const {test, consequent, alternate} = i;
                     switch_body_arr.push(i.alternate.body[0].expression.right.value);
                     switch_body_arr.push(i.consequent.body[0].expression.right.value);
@@ -94,6 +94,17 @@ function get_switch_obj(SwitchNode){
     return current_obj;
 };
 
+var uniqueFilter = function(arr) {
+    return arr.filter(function(elem, pos, self) {
+        // 如果没有重复项，返回true，返回false的是有对应的elem会被删除
+        return self.indexOf(elem, pos + 1) === -1;
+    });
+};
+
+/*
+通过将a = i 这种赋值表达式取出,然后计算出最底层节点对应的初始参数的值,将其转化为一层控制流
+ */
+
 const ThreeSwithNormal = {
     "ForStatement"(path){
         const {init,test,update,body} = path.node;
@@ -103,8 +114,11 @@ const ThreeSwithNormal = {
         let init_params_body = get_other_expression(body.body);
         let SwitchNode = get_switch_expression(body.body);
         let return_obj_statement = return_obj_create(init, init_params_body);
-        let switch_body_arr = [];
+        var switch_body_arr = [];
         get_switch_val(switch_body_arr, SwitchNode);
+        switch_body_arr.push(init.declarations[0].init.value);
+        let switch_result = uniqueFilter(switch_body_arr);
+        // console.log(switch_result);
         init_params_body.push(types.returnStatement(return_obj_statement));
         //将初始化的值eval进内存.后续可以直接调用
         eval(generator(types.functionDeclaration(types.identifier('init_var_identify'),
@@ -119,8 +133,8 @@ const ThreeSwithNormal = {
         let SwitchObj = get_switch_obj(SwitchNode);
 
         let normal_switch_arr = [];
-        for(let i of switch_body_arr){
-            if(i){
+        for(let i of switch_result){
+            if(i !== undefined){
                 normal_switch_arr.push(types.switchCase(types.valueToNode(i),get_lowest_node(init_data(i),SwitchNode,SwitchObj)));
             }
         };
@@ -132,8 +146,35 @@ const ThreeSwithNormal = {
 traverse(ast_code, ThreeSwithNormal);
 
 
+// 单次引用的可以直接替换
+const SwithMerge1 = {
+    "SwitchStatement"(path){
+       const {discriminant, cases} = path.node;
+       let switch_var_name = discriminant.name;
+       let binding = path.scope.getBinding(switch_var_name);
+       let references = binding.referencePaths;
+       let switchhash = {};
+       // 获取被引用的次数
+       path.scope.traverse(path.scope.block, {
+           AssignmentExpression(_path){
+               const {left, right} = _path.node;
+               if(left.name !== switch_var_name) return;
+               // console.log(_path.toString())
+               if(!switchhash[right.value]){
+                   switchhash[right.value] = 1
+               }else{
+                   switchhash[right.value] += 1
+               }
+           }
+       });
+       console.log(switchhash)
+    }
+};
 
+traverse(ast_code, SwithMerge1);
 
+// todo 针对if表达式的还原,采用遍历进入If表达式然后判断其子节点的类型在决定是否替换.
+// todo 先还原所有的if表达式,在进行下一步替换
 
 
 
