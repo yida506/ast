@@ -112,6 +112,7 @@ const ThreeSwithNormal = {
         if(update) return;
         if(!init) return;
         let init_params_body = get_other_expression(body.body);
+        // 获取for循环中的switch部分
         let SwitchNode = get_switch_expression(body.body);
         let return_obj_statement = return_obj_create(init, init_params_body);
         var switch_body_arr = [];
@@ -146,13 +147,27 @@ const ThreeSwithNormal = {
 traverse(ast_code, ThreeSwithNormal);
 
 
-// 单次引用的可以直接替换
+
+
+
+// 根据case节点的索引值,获取其path
+function get_case_path(casespath,swithcases,value){
+    for(let swithcase of swithcases){
+        if(swithcase.test.value == value){
+            return casespath[swithcases.indexOf(swithcase)]
+        }
+    }
+};
+
+/*
+    针对绑定次数为1的情况,都可以直接还原
+*/
+
 const SwithMerge1 = {
     "SwitchStatement"(path){
        const {discriminant, cases} = path.node;
+       let casePath = path.get('cases');
        let switch_var_name = discriminant.name;
-       let binding = path.scope.getBinding(switch_var_name);
-       let references = binding.referencePaths;
        let switchhash = {};
        // 获取被引用的次数
        path.scope.traverse(path.scope.block, {
@@ -167,14 +182,108 @@ const SwithMerge1 = {
                }
            }
        });
-       console.log(switchhash)
+       //删除未定义
+       delete switchhash[undefined];
+       /*
+           针对绑定次数为1的情况,都可以直接还原,
+           此处需要遍历AssignmentExpression,然后替换,接着删除对应case节点
+       */
+        path.scope.traverse(path.scope.block, {
+           AssignmentExpression(_path){
+               const {left, right} = _path.node;
+               if(left.name !== switch_var_name) return;
+               if(switchhash[right.value] == 1){
+                   let Nextpath = get_case_path(casePath, cases, right.value);
+                   // 当前节点替换
+                   _path.parentPath.replaceWithMultiple(Nextpath.node.consequent.filter(item=>item.type !== 'BreakStatement'));
+               }
+           }
+       });
+        //删除已合并的1级控制流
+        for(let item of casePath){
+            if(switchhash[item.node.test.value] === 1) item.remove();
+        };
+
+        /*
+        第一种if替换
+        对于if(){
+            xxx
+            a = 1
+            }else{
+            a = 1
+            }
+            ---->
+            if(){
+            xxx
+            }
+            a = 1
+            只需要判断 节点值是否相等然后调整if表达式即可
+
+         */
+        path.scope.traverse(path.scope.block, {
+            "IfStatement":{
+                exit:function (_path){
+                    const {test, consequent, alternate} = _path.node;
+                    let consequentexp = consequent.body[consequent.body.length-1],alternateexp = alternate.body[alternate.body.length-1];
+                    if(types.isAssignmentExpression(consequentexp.expression) && types.isAssignmentExpression(alternateexp.expression)){
+                        // console.log(_path.toString());
+                        //第一种情况 针对值相同
+                        if(consequentexp.expression.right.value === alternateexp.expression.right.value){
+                            if(consequent.body.length > 1){
+                                _path.replaceWithMultiple([
+                                    types.IfStatement(test,
+                                        types.BlockStatement(consequent.body.splice(0,consequent.body.length-1))),
+                                    consequentexp]);
+                            }else if(alternate.body.length > 1){
+                                _path.replaceWithMultiple([
+                                    types.IfStatement(types.UnaryExpression('!',test),
+                                        types.BlockStatement(alternate.body.splice(0,alternate.body.length-1))),
+                                    consequentexp])
+                            }
+                        };
+                        _path.stop()
+                        _path.crawl
+                    };
+                    // _path.stop()
+                }
+        }});
+
+
+        /*
+        第二种情况,类似for循环的还原
+        需要按照节点游走的思想,去除所有子节点
+        貌似需要对绑定次数为1进行一个整体的删除的方法封装
+         */
+        // path.scope.traverse(path.scope.block,{
+        //     "IfStatement"(_path){
+        //         const {test, consequent, alternate} = _path.node;
+        //         if(types.isBinaryExpression(test)){
+        //             console.log(_path.toString())
+        //         }
+        //     }
+        // })
+
+        switchhash = {};
+        // 获取被引用的次数
+        path.scope.traverse(path.scope.block, {
+            AssignmentExpression(_path){
+                const {left, right} = _path.node;
+                if(left.name !== switch_var_name) return;
+                // console.log(_path.toString())
+                if(!switchhash[right.value]){
+                    switchhash[right.value] = 1
+                }else{
+                    switchhash[right.value] += 1
+                }
+            }
+        });
+        console.log(switchhash)
+
     }
 };
 
 traverse(ast_code, SwithMerge1);
 
-// todo 针对if表达式的还原,采用遍历进入If表达式然后判断其子节点的类型在决定是否替换.
-// todo 先还原所有的if表达式,在进行下一步替换
 
 
 
