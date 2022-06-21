@@ -31,23 +31,23 @@ function get_switch_expression(arr){
     return false
 };
 
-function get_switch_val(switch_body_arr, swiobj){
-    const {discriminant, cases} = swiobj;
-    for(let casenode of cases){
-        if(types.isSwitchStatement(casenode.consequent[0])){
-            get_switch_val(switch_body_arr, casenode.consequent[0])
-        }else{
-            for(let i of casenode.consequent){
-                // console.log(i.type,'------',generator(i).code);
-                if(types.isAssignmentExpression(i.expression) && i.expression.left.name == 'a'){
-                    switch_body_arr.push(i.expression.right.value);
-                }else if(types.isIfStatement(i)){
-                    // console.log(i.type,'------',generator(i).code,'-----',i.alternate.body[0].expression.right.value);
-                    const {test, consequent, alternate} = i;
-                    switch_body_arr.push(i.alternate.body[0].expression.right.value);
-                    switch_body_arr.push(i.consequent.body[0].expression.right.value);
+function get_switch_val(switch_body_arr, swiobj, baseswitchvar){
+    const {cases} = swiobj;
+        for(let casenode of cases){
+            if(types.isSwitchStatement(casenode.consequent[0])){
+                get_switch_val(switch_body_arr, casenode.consequent[0],baseswitchvar)
+            }else{
+                for(let i of casenode.consequent){
+                    // console.log(i.type,'------',generator(i).code);
+                    if(types.isAssignmentExpression(i.expression) && i.expression.left.name == baseswitchvar){
+                        switch_body_arr.push(i.expression.right.value);
+                    }else if(types.isIfStatement(i)){
+                        // console.log(i.type,'------',generator(i).code,'-----',i.alternate.body[0].expression.right.value);
+                        const {test, consequent, alternate} = i;
+                        switch_body_arr.push(i.alternate.body[0].expression.right.value);
+                        switch_body_arr.push(i.consequent.body[0].expression.right.value);
+                    }
                 }
-            }
         }
     }
 };
@@ -111,12 +111,18 @@ const ThreeSwithNormal = {
         let var_name = init.declarations[0].id.name;
         if(update) return;
         if(!init) return;
+        if(!body.body) return;
         let init_params_body = get_other_expression(body.body);
         // 获取for循环中的switch部分
         let SwitchNode = get_switch_expression(body.body);
         let return_obj_statement = return_obj_create(init, init_params_body);
         var switch_body_arr = [];
-        get_switch_val(switch_body_arr, SwitchNode);
+        /*
+            switch_body_arr: 用于保存case
+            SwitchNode: for循环中的switch部分
+            var_name: 初始参数名称,用于节点合并
+         */
+        get_switch_val(switch_body_arr, SwitchNode, var_name);
         switch_body_arr.push(init.declarations[0].init.value);
         let switch_result = uniqueFilter(switch_body_arr);
         // console.log(switch_result);
@@ -125,11 +131,11 @@ const ThreeSwithNormal = {
         eval(generator(types.functionDeclaration(types.identifier('init_var_identify'),
             [init.declarations[0].id],
             types.blockStatement([types.returnStatement(test)])
-            )).code);
+        )).code);
         eval(generator(types.functionDeclaration(types.identifier('init_data'),
             [init.declarations[0].id],
             types.blockStatement(init_params_body)
-            )).code);
+        )).code);
 
         let SwitchObj = get_switch_obj(SwitchNode);
 
@@ -140,7 +146,7 @@ const ThreeSwithNormal = {
             }
         };
         path.replaceWith(types.forStatement(init,test,update, types.switchStatement(init.declarations[0].id,normal_switch_arr)));
-        path.stop()
+        // path.stop()
     }
 };
 
@@ -163,7 +169,13 @@ function get_case_path(casespath,swithcases,value){
     针对绑定次数为1的情况,都可以直接还原
 */
 
-const SwithMerge1 = {
+
+function get_binding_times(path, switchhash){
+
+}
+
+
+const SwithMerge = {
     "SwitchStatement"(path){
        const {discriminant, cases} = path.node;
        let casePath = path.get('cases');
@@ -196,12 +208,13 @@ const SwithMerge1 = {
                    let Nextpath = get_case_path(casePath, cases, right.value);
                    // 当前节点替换
                    _path.parentPath.replaceWithMultiple(Nextpath.node.consequent.filter(item=>item.type !== 'BreakStatement'));
-               }
+                   switchhash[right.value] -= 1;
+               };
            }
        });
-        //删除已合并的1级控制流
+       // //  //删除已合并的1级控制流
         for(let item of casePath){
-            if(switchhash[item.node.test.value] === 1) item.remove();
+            if(switchhash[item.node.test.value] === 0) item.remove();
         };
 
         /*
@@ -224,6 +237,8 @@ const SwithMerge1 = {
             "IfStatement":{
                 exit:function (_path){
                     const {test, consequent, alternate} = _path.node;
+                    //单if的情况
+                    if(!alternate) return;
                     let consequentexp = consequent.body[consequent.body.length-1],alternateexp = alternate.body[alternate.body.length-1];
                     if(types.isAssignmentExpression(consequentexp.expression) && types.isAssignmentExpression(alternateexp.expression)){
                         // console.log(_path.toString());
@@ -241,48 +256,65 @@ const SwithMerge1 = {
                                     consequentexp])
                             }
                         };
-                        _path.stop()
-                        _path.crawl
                     };
-                    // _path.stop()
                 }
         }});
 
-
         /*
-        第二种情况,类似for循环的还原
-        需要按照节点游走的思想,去除所有子节点
-        貌似需要对绑定次数为1进行一个整体的删除的方法封装
+            针对类似for循环的游走合并
          */
-        // path.scope.traverse(path.scope.block,{
-        //     "IfStatement"(_path){
-        //         const {test, consequent, alternate} = _path.node;
-        //         if(types.isBinaryExpression(test)){
-        //             console.log(_path.toString())
-        //         }
-        //     }
-        // })
-
-        switchhash = {};
-        // 获取被引用的次数
         path.scope.traverse(path.scope.block, {
-            AssignmentExpression(_path){
-                const {left, right} = _path.node;
-                if(left.name !== switch_var_name) return;
-                // console.log(_path.toString())
-                if(!switchhash[right.value]){
-                    switchhash[right.value] = 1
-                }else{
-                    switchhash[right.value] += 1
+            "IfStatement"(_path){
+                const {test, consequent, alternate} = _path.node;
+                if(!types.isBinaryExpression(test)) return;
+                let consequentexp = consequent.body[consequent.body.length-1], alternateexp = alternate.body[alternate.body.length-1];
+                // console.log('----------------');
+                // console.log('parent', _path.parent.test.value)
+                // console.log(_path.toString());
+                if(types.isExpressionStatement(consequentexp)){
+                    // 如果值相同,说明可以直接替换成for循环的形式
+                    if(_path.parent.test.value == consequentexp.expression.right.value){
+                        _path.replaceWithMultiple([
+                            types.ForStatement(null,test,null,
+                                types.BlockStatement(consequent.body.splice(0, consequent.body.length-1))
+                            ),...alternate.body]
+                        )
+                    }else if(_path.parent.test.value != consequentexp.expression.right.value){
+                        // 继续向下游走,暂时只考虑只需要游走一次的情况
+                        console.log('----------------');
+                        console.log('parent', _path.parent.test.value)
+                        console.log(_path.toString());
+                        // todo 解决查不到case节点的Bug
+                        let Nextpath = get_case_path(casePath, cases, consequentexp.expression.right.value);
+                        // _path.replaceWithMultiple([
+                        //     types.ForStatement(null,test,null,
+                        //         types.BlockStatement([...consequent.body.splice(0, consequent.body.length-1),...Nextpath.node.consequent])
+                        //     ),...alternate.body]
+                        // )
+                    }
                 }
             }
         });
-        console.log(switchhash)
 
+
+        // switchhash = {};
+        // path.scope.traverse(path.scope.block, {
+        //     AssignmentExpression(_path){
+        //         const {left, right} = _path.node;
+        //         if(left.name !== switch_var_name) return;
+        //         // console.log(_path.toString())
+        //         if(!switchhash[right.value]){
+        //             switchhash[right.value] = 1
+        //         }else{
+        //             switchhash[right.value] += 1
+        //         }
+        //     }
+        // });
+        // console.log(switchhash)
     }
 };
 
-traverse(ast_code, SwithMerge1);
+traverse(ast_code, SwithMerge);
 
 
 
